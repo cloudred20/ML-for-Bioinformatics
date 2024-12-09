@@ -1,21 +1,22 @@
-## Step 1: Downloading and Preparing TCGA miRNA Expression Data 
+## Step1: Downloading and preparing TCGA miRNA expression data
 
-## 1. Load Required Packages ----
-
-# Load essential libraries for data handling and analysis
-library(tidyverse)
-library(TCGAbiolinks)
-library(DESeq2)
-library(caret)
-
-## 2. Download miRNA Expression Data ----
-# Create a directory for storing the downloaded data
+## We first create a directory for downloading the data
 dir.create("./data")
 
-# Define the list of TCGA cancer projects to download
-cancer.list <- c("TCGA-LUAD", "TCGA-LUSC")
+## This script is organized into 7 sub-sections.
+## 1. Load packages ----
 
-# Query GDC API to check for available miRNA expression data
+library(tidyverse); library(TCGAbiolinks); library(sqldf); library(UCSCXenaTools)
+library(ExpressionNormalizationWorkflow); library(DESeq2)
+
+## 2. Download MiRNA expression data ----
+
+# list of different cancer data-sets available at TCGA
+cancer.list <- getGDCprojects() %>% 
+  filter(grepl("TCGA", id)) %>%
+  pull(id) %>% sort(.)
+
+# querying GDC API for cancer data-sets where miRNA expression data is available
 query.miRNA <- NULL
 
 for (i in cancer.list) {                          
@@ -252,82 +253,7 @@ hsa <- hsa %>%
          cluster = paste(Chr, "_", cluster, sep="")) %>%
   select(c(Chr, Start, End, Strand, MiRNA, cluster))
 
-# Save the clustered miRNA data to a text file
-write.table(hsa, "data/hsa_cluster.txt", sep = "\t")
+write.table(hsa,"data/hsa_cluster.txt", sep = "\t")
 
-
-## Step 2: Classification of Tumor vs. Normal Samples Using Machine Learning
-
-## 1. Feature Selection for miRNA Clusters in LUAD and LUSC Datasets----
-# Create a list where each element contains miRNAs for a specific cluster
-miRNA_clusters <- hsa %>%
-  group_by(cluster) %>%
-  summarise(MiRNA_list = list(MiRNA)) %>%
-  deframe()  
-
-# Create lists of LUAD and LUSC datasets for each cluster
-tcga.luad <- list()
-tcga.lusc <- list()
-
-for (i in seq_along(miRNA_clusters)) {
-  tcga.luad[[i]] <- dat.mir[[1]] %>% filter(rownames(dat.mir[[1]]) %in% 
-                                              miRNA_clusters[[i]])
-  tcga.lusc[[i]] <- dat.mir[[2]] %>% filter(rownames(dat.mir[[2]]) %in% 
-                                              miRNA_clusters[[i]])
-}
-
-# Assign cluster names to the lists
-names(tcga.luad) <- names(miRNA_clusters)
-names(tcga.lusc) <- names(miRNA_clusters)
-
-# Filter out clusters with fewer than 2 miRNAs
-tcga.luad <- tcga.luad[sapply(tcga.luad, nrow) > 1]
-tcga.lusc <- tcga.lusc[sapply(tcga.lusc, nrow) > 1]
-
-## 2. Split the data into training and test data----
-
-# Function to create training and testing datasets based on condition data
-create_train_test <- function(dat, condition_data) {
-  # Set the seed for reproducibility
-  set.seed(123)
-  
-  # Create a partition based on "sample_type"
-  train_index <- createDataPartition(condition_data$sample_type, p = 0.7, list = FALSE)
-  
-  # Extract training and testing cases
-  train_condition <- condition_data[train_index, ]
-  test_condition <- condition_data[-train_index, ]
-  
-  # Get the cases for training and testing
-  train_cases <- train_condition$cases
-  test_cases <- test_condition$cases
-  
-  # Initialize lists for the training and testing datasets
-  train_data <- list()
-  test_data <- list()
-  
-  # Loop through each cluster and filter based on cases
-  for (i in seq_along(dat)) {
-    cluster_data <- dat[[i]]
-    train_data[[i]] <- cluster_data[, colnames(cluster_data) %in% train_cases]
-    test_data[[i]] <- cluster_data[, colnames(cluster_data) %in% test_cases]
-  }
-  
-  return(list(train = train_data, test = test_data))
-}
-
-# Apply the function to tcga.luad (condition[[1]]) and tcga.lusc (condition[[2]])
-train_test_luad <- create_train_test(tcga.luad, condition[[1]])
-train_test_lusc <- create_train_test(tcga.lusc, condition[[2]])
-
-# Access the training and testing data for tcga.luad and tcga.lusc
-train_tcga_luad <- train_test_luad$train
-test_tcga_luad <- train_test_luad$test
-train_tcga_lusc <- train_test_lusc$train
-test_tcga_lusc <- train_test_lusc$test
-
-## 3. Logistic Regression Model - used for binary classification tasks----
-## 4. SVM - find a hyperplane that best separates the classes in the feature space----
-## 5. Random Forest - build multiple decision trees and merge them together to get a more accurate and stable prediction----
-## 6. Comparison of the model performance----
-
+## 7. Print version information about R, the OS and attached or loaded packages ----
+sessionInfo()
