@@ -13,7 +13,7 @@ if (!require("BiocManager", quietly = TRUE))
 
 BiocManager::install("TCGAbiolinks")
 library(tidyverse); library(TCGAbiolinks); library(sqldf); library(UCSCXenaTools)
-library(ExpressionNormalizationWorkflow); library(DESeq2)
+library(ExpressionNormalizationWorkflow); 
 
 library("caret")
 
@@ -413,10 +413,6 @@ for (i in seq_along(train_tcga_lusc)) {
   test_lusc_targets[[i]] <- extract_target(condition[[2]], test_cases)
 }
 
-install.packages("stats")
-library("stats")
-
-# Function to prepare logistic regression data (combine gene expression data and target)
 prepare_logistic_regression_data <- function(gene_expression_data, target) {
   # Transpose the gene expression data to have samples as rows
   logistic_data <- t(gene_expression_data)
@@ -448,25 +444,25 @@ for (i in seq_along(train_tcga_lusc)) {
   test_data_lusc[[i]] <- prepare_logistic_regression_data(test_tcga_lusc[[i]], test_lusc_targets[[i]])
 }
 
-for (i in seq_along(train_data_luad)) {
-train_data_luad[[i]]$target <- ifelse(train_data_luad[[i]]$target == "Tumor", 1, 0)}
+# for (i in seq_along(train_data_luad)) {
+# train_data_luad[[i]]$target <- ifelse(train_data_luad[[i]]$target == "Tumor", 1, 0)}
 
-for (i in seq_along(train_data_lusc)) {
-train_data_lusc[[i]]$target <- ifelse(train_data_lusc[[i]]$target == "Tumor", 1, 0)}
+# for (i in seq_along(train_data_lusc)) {
+# train_data_lusc[[i]]$target <- ifelse(train_data_lusc[[i]]$target == "Tumor", 1, 0)}
 
-for (i in seq_along(test_data_luad)) {
-test_data_luad[[i]]$target <- ifelse(test_data_luad[[i]]$target == "Tumor", 1, 0)}
+# for (i in seq_along(test_data_luad)) {
+# test_data_luad[[i]]$target <- ifelse(test_data_luad[[i]]$target == "Tumor", 1, 0)}
 
-for (i in seq_along(test_data_lusc)) {
-test_data_lusc[[i]]$target <- ifelse(test_data_lusc[[i]]$target == "Tumor", 1, 0)}
+# for (i in seq_along(test_data_lusc)) {
+# test_data_lusc[[i]]$target <- ifelse(test_data_lusc[[i]]$target == "Tumor", 1, 0)}
+
+
+install.packages("stats")
+library("stats")
 
 logit_models_luad <- list()
 for (i in seq_along(train_data_luad)) {
   logit_models_luad[[i]] <- glm(target ~ ., data = train_data_luad[[i]], family = 'binomial')}
-
-logit_models_lusc <- list()
-for (i in seq_along(train_data_lusc)) {
-  logit_models_lusc[[i]] <- glm(target ~ ., data = train_data_lusc[[i]], family = 'binomial')}
 
 # Initialize an empty list to store accuracy results
 accuracy_results <- data.frame(Model = character(),
@@ -501,13 +497,118 @@ for (i in seq_along(logit_models_luad)) {
 # Print the summary table of accuracy results
 print(accuracy_results)
 
+
+#Consider good candidates with an accuracy above 90%
 accuracy_results <- accuracy_results[order(accuracy_results$Accuracy, decreasing = TRUE), ] %>% filter(Accuracy >= 0.90)
 accuracy_results
 
-clusters <- as.list(names(tcga.lusc))
+
+
+x <-as.list(names(tcga.luad))
+x
+
+clusters <- as.list(names(tcga.luad))
 model <- as.list(c(8,18,32,19,14))
 for (i in model){
     print(clusters[[i]])}
+
+accuracy_results <- data.frame(Model = character(),
+                               Accuracy = numeric(),
+                               F1_Score = numeric(),
+                               stringsAsFactors = FALSE)
+
+# Loop through the models and calculate accuracy and F1 score for each one
+for (i in seq_along(logit_models_luad)) {
+  
+  # Get the current model
+  model <- logit_models_luad[[i]]
+  
+  # Get the corresponding test data (assuming target column is in the test data)
+  test_data <- test_data_luad[[i]]
+  
+  # Make predictions (predicting on the test data)
+  predictions <- predict(model, newdata = test_data, type = "response")
+  
+  # Convert predictions to binary (0 or 1) based on a threshold (typically 0.5)
+  predicted_class <- ifelse(predictions > 0.5, 1, 0)
+  
+  # Actual class labels
+  actual_class <- test_data$target  # Assuming target is the true class in the test data
+  
+  # Calculate accuracy
+  accuracy <- mean(predicted_class == actual_class)
+  
+  # Calculate confusion matrix components
+  TP <- sum(predicted_class == 1 & actual_class == 1)  # True Positives
+  FP <- sum(predicted_class == 1 & actual_class == 0)  # False Positives
+  FN <- sum(predicted_class == 0 & actual_class == 1)  # False Negatives
+  TN <- sum(predicted_class == 0 & actual_class == 0)  # True Negatives
+  
+  # Calculate precision, recall, and F1 score
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  f1_score <- 2 * (precision * recall) / (precision + recall)
+  
+  # Append the results to the accuracy results table
+  accuracy_results <- rbind(accuracy_results, data.frame(Model = paste("Cluster", i),
+                                                        Accuracy = accuracy,
+                                                        F1_Score = f1_score))
+}
+
+# Print the summary table of accuracy and F1 score results
+print(accuracy_results)
+
+accuracy_results <- accuracy_results[order(accuracy_results$Accuracy, decreasing = TRUE), ] %>% filter(Accuracy >= 0.90)
+accuracy_results
+
+tcga.luad[[14]]
+
+
+
+install.packages("pROC")
+library(pROC)
+
+# Initialize a data frame to store the results
+roc_results <- data.frame(Model = character(),
+                          AUC = numeric(),
+                          stringsAsFactors = FALSE)
+
+# Loop through the models and calculate ROC, AUC and plot the ROC curve
+for (i in seq_along(logit_models_luad)) {
+  
+  # Get the current model
+  model <- logit_models_luad[[i]]
+  
+  # Get the corresponding test data (assuming target column is in the test data)
+  test_data <- test_data_luad[[i]]
+  
+  # Make predictions (predicting probabilities on the test data)
+  predictions <- predict(model, newdata = test_data, type = "response")
+  
+  # Get the actual target values from the test data
+  actual_class <- test_data$target  # Assuming target is the true class in the test data
+  
+  # Calculate ROC curve and AUC
+  roc_curve <- roc(actual_class, predictions)  # ROC curve
+  auc_value <- auc(roc_curve)  # AUC value
+  
+  # Store the results in the data frame
+  roc_results <- rbind(roc_results, data.frame(Model = paste("Cluster", i),
+                                               AUC = auc_value))
+  
+  # Plot the ROC curve
+  plot(roc_curve, main = paste("ROC Curve - Cluster", i), col = i, lwd = 2)
+  # Optionally, add a legend
+  legend("bottomright", legend = paste("AUC =", round(auc_value, 2)),
+         col = i, lwd = 2)
+}
+
+# Print the ROC and AUC results
+print(roc_results)
+
+logit_models_lusc <- list()
+for (i in seq_along(train_data_lusc)) {
+  logit_models_lusc[[i]] <- glm(target ~ ., data = train_data_lusc[[i]], family = 'binomial')}
 
 # Initialize an empty list to store accuracy results
 accuracy_results <- data.frame(Model = character(),
@@ -542,6 +643,57 @@ for (i in seq_along(logit_models_lusc)) {
 # Print the summary table of accuracy results
 print(accuracy_results)
 
+accuracy_results <- data.frame(Model = character(),
+                               Accuracy = numeric(),
+                               F1_Score = numeric(),
+                               stringsAsFactors = FALSE)
+
+# Loop through the models and calculate accuracy and F1 score for each one
+for (i in seq_along(logit_models_lusc)) {
+  
+  # Get the current model
+  model <- logit_models_lusc[[i]]
+  
+  # Get the corresponding test data (assuming target column is in the test data)
+  test_data <- test_data_lusc[[i]]
+  
+  # Make predictions (predicting on the test data)
+  predictions <- predict(model, newdata = test_data, type = "response")
+  
+  # Convert predictions to binary (0 or 1) based on a threshold (typically 0.5)
+  predicted_class <- ifelse(predictions > 0.5, 1, 0)
+  
+  # Actual class labels
+  actual_class <- test_data$target  # Assuming target is the true class in the test data
+  
+  # Calculate accuracy
+  accuracy <- mean(predicted_class == actual_class)
+  
+  # Calculate confusion matrix components
+  TP <- sum(predicted_class == 1 & actual_class == 1)  # True Positives
+  FP <- sum(predicted_class == 1 & actual_class == 0)  # False Positives
+  FN <- sum(predicted_class == 0 & actual_class == 1)  # False Negatives
+  TN <- sum(predicted_class == 0 & actual_class == 0)  # True Negatives
+  
+  # Calculate precision, recall, and F1 score
+  precision <- TP / (TP + FP)
+  recall <- TP / (TP + FN)
+  f1_score <- 2 * (precision * recall) / (precision + recall)
+  
+  # Append the results to the accuracy results table
+  accuracy_results <- rbind(accuracy_results, data.frame(Model = paste("Cluster", i),
+                                                        Accuracy = accuracy,
+                                                        F1_Score = f1_score))
+}
+
+# Print the summary table of accuracy and F1 score results
+print(accuracy_results)
+
+accuracy_results <- accuracy_results[order(accuracy_results$Accuracy, decreasing = TRUE), ] %>% filter(Accuracy >= 0.90)
+accuracy_results
+
+tcga.lusc[[19]]
+
 accuracy_results <- accuracy_results[order(accuracy_results$Accuracy, decreasing = TRUE), ] %>% filter(Accuracy >= 0.90)
 accuracy_results
 
@@ -550,69 +702,521 @@ model <- as.list(c(24,6,7,30,19,31,15,1,18,22,4,11))
 for (i in model){
     print(clusters[[i]])}
 
-kfold <- createFolds(labels, k = 10)
+# Initialize a data frame to store the results
+roc_results <- data.frame(Model = character(),
+                          AUC = numeric(),
+                          stringsAsFactors = FALSE)
 
-install.packages("randomForest")
-library("randomForest")
-
-# Create a list to store the random forest models
-rf_models <- list()
-
-# Assuming the target variable is 'target' and it is present in each training dataframe.
-# Loop through the list of training dataframes
-for (i in seq_along(train_data_luad)) {
+# Loop through the models and calculate ROC, AUC and plot the ROC curve
+for (i in seq_along(logit_models_lusc)) {
   
-  # Get the current training data frame
-  train_df <- train_data_luad[[i]]
+  # Get the current model
+  model <- logit_models_lusc[[i]]
   
-  # Extract the target column (assuming the target column is named 'target')
-  target <- train_df$target
+  # Get the corresponding test data (assuming target column is in the test data)
+  test_data <- test_data_lusc[[i]]
   
-  # Remove the target column from the feature data
-  features <- train_df[, !colnames(train_df) %in% "target"]
+  # Make predictions (predicting probabilities on the test data)
+  predictions <- predict(model, newdata = test_data, type = "response")
   
-  # Fit the random forest model using the features and target variable
-  rf_model <- randomForest(features, target, ntree = 20)  # You can adjust ntree and other parameters as needed
+  # Get the actual target values from the test data
+  actual_class <- test_data$target  # Assuming target is the true class in the test data
   
-  # Store the model in the list
-  rf_models[[i]] <- rf_model
+  # Calculate ROC curve and AUC
+  roc_curve <- roc(actual_class, predictions)  # ROC curve
+  auc_value <- auc(roc_curve)  # AUC value
+  
+  # Store the results in the data frame
+  roc_results <- rbind(roc_results, data.frame(Model = paste("Cluster", i),
+                                               AUC = auc_value))
+  
+  # Plot the ROC curve
+  plot(roc_curve, main = paste("ROC Curve - Cluster", i), col = i, lwd = 2)
+  # Optionally, add a legend
+  legend("bottomright", legend = paste("AUC =", round(auc_value, 2)),
+         col = i, lwd = 2)
 }
 
-# Create a list to store accuracy results
-accuracy_results <- data.frame(Model = character(),
-                               Accuracy = numeric(),
-                               stringsAsFactors = FALSE)
+# Print the ROC and AUC results
+print(roc_results)
 
-# Assuming test_data_luad contains your test datasets
-for (i in seq_along(rf_models)) {
+install.packages("kernlab")
+library(kernlab)
+
+library(e1071)  
+
+# Example of training with SVM and K-fold cross-validation
+
+perform_svm_cv <- function(train_data_list, k = 5) {
   
-  # Get the current random forest model
-  rf_model <- rf_models[[i]]
+  # Initialize an empty list to store results
+  results <- list()
   
-  # Get the corresponding test data (assuming test data has the same structure as training data)
-  test_df <- test_data_luad[[i]]
+  # Loop through each cluster in the data list
+  for (i in seq_along(train_data_list)) {
+    
+    # Get the current training data
+    train_data <- train_data_list[[i]]
+    
+    # Ensure target is a factor for classification
+    train_data$target <- factor(train_data$target, levels = c("Tumor", "Normal"))  # 0 = Normal, 1 = Tumor
+    
+    # Define training control for K-fold cross-validation (k = 5)
+    train_control <- trainControl(method = "cv", number = k, 
+                                  summaryFunction = twoClassSummary, 
+                                  classProbs = TRUE, 
+                                  savePredictions = "final")
+    
+    # Train SVM model (SVM with linear kernel)
+    svm_model <- train(target ~ ., data = train_data, method = "svmLinear", 
+                       trControl = train_control, 
+                       metric = "ROC")
+    
+    # Store the results of each fold for further analysis
+    results[[i]] <- list(model = svm_model, resampling_results = svm_model$results)
+    
+    # Print the summary of results (accuracy, ROC, etc.)
+    print(paste("Results for Cluster", i))
+    print(svm_model$results)
+  }
   
-  # Extract the target column (assuming the target column is named 'target')
-  actual_target <- test_df$target
-  
-  # Remove the target column from the test data to get the features
-  test_features <- test_df[, !colnames(test_df) %in% "target"]
-  
-  # Make predictions on the test data
-  predictions <- predict(rf_model, test_features)
-  
-  # Calculate accuracy
-  accuracy <- mean(predictions == actual_target)
-  
-  # Store the results in the accuracy results table
-  accuracy_results <- rbind(accuracy_results, data.frame(Model = paste("Cluster", i),
-                                                         Accuracy = accuracy))
+  return(results)
 }
 
-# Print the summary table of accuracy results
-print(accuracy_results)
+# Apply the function to perform 5-fold cross-validation on the LUAD training data
+results_luad <- perform_svm_cv(train_data_luad, k = 5)
 
-rf_models[[2]]
+# Apply the function to perform 5-fold cross-validation on the LUSC training data
+results_lusc <- perform_svm_cv(train_data_lusc, k = 5)
+
+# Load necessary libraries
+library(caret)      # for train() and cross-validation
+library(pROC)       # for ROC curves
+library(e1071)      # for svmLinear model
+# Function to calculate F1 score for binary classification
+calculate_f1_score <- function(model, actual) {
+  # Get predictions
+  predictions <- predict(model, type = "raw")
+  
+  # Confusion matrix
+  cm <- confusionMatrix(predictions, actual)
+  
+  # Precision and recall
+  precision <- cm$byClass["Pos Pred Value"]
+  recall <- cm$byClass["Sensitivity"]
+  
+  # F1 score formula
+  f1_score <- 2 * (precision * recall) / (precision + recall)
+  return(f1_score)
+}
+
+# Function to perform K-fold cross-validation for SVM
+perform_svm_cv <- function(train_data_list, k = 5) {
+  
+  # Initialize an empty list to store results
+  results <- list()
+  
+  # Loop through each cluster in the data list
+  for (i in seq_along(train_data_list)) {
+    
+    # Get the current training data
+    train_data <- train_data_list[[i]]
+    
+    # Ensure target is a factor for classification
+    train_data$target <- factor(train_data$target, levels = c("Normal", "Tumor"))  # 0 = Normal, 1 = Tumor
+    
+    # Define training control for K-fold cross-validation (k = 5)
+    train_control <- trainControl(method = "cv", number = k, 
+                                  summaryFunction = twoClassSummary, 
+                                  classProbs = TRUE, 
+                                  savePredictions = "final")
+    
+    # Train SVM model (SVM with linear kernel)
+    svm_model <- train(target ~ ., data = train_data, method = "svmLinear", 
+                       trControl = train_control, 
+                       metric = "ROC")
+    
+    # Store the results of each fold for further analysis
+    results[[i]] <- list(model = svm_model, resampling_results = svm_model$results)
+    
+    # Print the summary of results (accuracy, ROC, etc.)
+    print(paste("Results for Cluster", i))
+    print(svm_model$results)
+    
+    # Calculate ROC curve for the model
+    # Get the predicted probabilities for the positive class (Tumor)
+    predictions <- predict(svm_model, newdata = train_data, type = "prob")
+    
+    # Calculate ROC for the positive class (assuming the second column is the probability of the Tumor class)
+    roc_curve <- roc(train_data$target, predictions[, 2])  # second column corresponds to Tumor class
+    plot(roc_curve, main = paste("ROC Curve for Cluster", i), col = "blue")
+    
+    # Calculate F1 score (binary classification)
+    f1_score <- calculate_f1_score(svm_model, train_data$target)
+    print(paste("F1 Score for Cluster", i, ": ", f1_score))
+  }
+  
+  return(results)
+}
+
+
+
+# Apply the function to perform 5-fold cross-validation on the LUAD training data
+results_luad <- perform_svm_cv(train_data_luad, k = 5)
+
+# Apply the function to perform 5-fold cross-validation on the LUSC training data
+results_lusc <- perform_svm_cv(train_data_lusc, k = 5)
+
+# Function to perform K-fold cross-validation for SVM and then predict test data
+perform_svm_cv_and_predict <- function(train_data_list, test_data_list, k = 5) {
+  
+  # Initialize an empty list to store results
+  results <- list()
+  
+  # Loop through each cluster in the data list
+  for (i in seq_along(train_data_list)) {
+    
+    # Get the current training data
+    train_data <- train_data_list[[i]]
+    
+    # Ensure target is a factor for classification
+    train_data$target <- factor(train_data$target, levels = c("Normal", "Tumor"))  # 0 = Normal, 1 = Tumor
+    
+    # Define training control for K-fold cross-validation (k = 5)
+    train_control <- trainControl(method = "cv", number = k, 
+                                  summaryFunction = twoClassSummary, 
+                                  classProbs = TRUE, 
+                                  savePredictions = "final")
+    
+    # Train SVM model (SVM with linear kernel)
+    svm_model <- train(target ~ ., data = train_data, method = "svmLinear", 
+                       trControl = train_control, 
+                       metric = "ROC")
+    
+    # Store the results of each fold for further analysis
+    results[[i]] <- list(model = svm_model, resampling_results = svm_model$results)
+    
+    # Print the summary of results (accuracy, ROC, etc.)
+    print(paste("Results for Cluster", i))
+    print(svm_model$results)
+    
+    # Calculate ROC curve for the model
+    # Get the predicted probabilities for the positive class (Tumor)
+    predictions <- predict(svm_model, newdata = train_data, type = "prob")
+    
+    # Calculate ROC for the positive class (assuming the second column is the probability of the Tumor class)
+    roc_curve <- roc(train_data$target, predictions[, 2])  # second column corresponds to Tumor class
+    plot(roc_curve, main = paste("ROC Curve for Cluster", i), col = "blue")
+    
+    # Calculate F1 score (binary classification)
+    f1_score <- calculate_f1_score(svm_model, train_data$target)
+    print(paste("F1 Score for Cluster", i, ": ", f1_score))
+    
+    # Now, predict on the test data (test_data_list[[i]])
+    test_data <- test_data_list[[i]]
+    
+    # Ensure test data has the same preprocessing (target as factor, same feature space)
+    test_data$target <- factor(test_data$target, levels = c("Normal", "Tumor"))  # target as factor
+    
+    # Get predictions on the test data
+    test_predictions <- predict(svm_model, newdata = test_data)
+    
+    # You can also get probabilities for test data (if needed)
+    test_probabilities <- predict(svm_model, newdata = test_data, type = "prob")
+    
+    # Print predictions
+    print(paste("Predictions for Cluster", i))
+    print(test_predictions)
+    
+    # You can also compute the confusion matrix and other metrics for the test data
+    test_conf_matrix <- confusionMatrix(test_predictions, test_data$target)
+    print(test_conf_matrix)
+  }
+  
+  return(results)
+}
+
+# Assuming you have 'train_data_list' and 'test_data_list' as lists of data frames
+# Example usage:
+
+
+results <- perform_svm_cv_and_predict(train_data_luad, test_data_luad)
+
+calculate_f1_score <- function(predictions, actual) {
+  cm <- confusionMatrix(predictions, actual)
+  precision <- cm$byClass["Precision"]
+  recall <- cm$byClass["Recall"]
+  f1 <- 2 * (precision * recall) / (precision + recall)
+  return(f1)
+}
+
+# Function to perform K-fold cross-validation for SVM and calculate accuracy and F1 score
+perform_svm_cv_and_evaluate <- function(train_data_list, test_data_list, k = 5) {
+  
+  # Initialize an empty data frame to store the results (model, accuracy, F1 score)
+  results <- data.frame(Model = character(),
+                        Accuracy = numeric(),
+                        F1_Score = numeric(),
+                        stringsAsFactors = FALSE)
+  
+  # Loop through each cluster in the data list
+  for (i in seq_along(train_data_list)) {
+    
+    # Get the current training data
+    train_data <- train_data_list[[i]]
+    
+    # Ensure target is a factor for classification
+    train_data$target <- factor(train_data$target, levels = c("Normal", "Tumor"))  # 0 = Normal, 1 = Tumor
+    
+    # Define training control for K-fold cross-validation (k = 5)
+    train_control <- trainControl(method = "cv", number = k, 
+                                  summaryFunction = twoClassSummary, 
+                                  classProbs = TRUE, 
+                                  savePredictions = "final")
+    
+    # Train SVM model (SVM with linear kernel)
+    svm_model <- train(target ~ ., data = train_data, method = "svmLinear", 
+                       trControl = train_control, 
+                       metric = "ROC")
+    
+    # Print the summary of results (accuracy, ROC, etc.)
+    print(paste("Results for Cluster", i))
+    print(svm_model$results)
+    
+    # Get the predictions for the test data
+    test_data <- test_data_list[[i]]
+    
+    # Ensure test data has the same preprocessing (target as factor)
+    test_data$target <- factor(test_data$target, levels = c("Normal", "Tumor"))  # target as factor
+    
+    # Get predictions on the test data
+    test_predictions <- predict(svm_model, newdata = test_data)
+    
+    # Calculate accuracy for the test data
+    accuracy <- mean(test_predictions == test_data$target)
+    
+    # Calculate F1 score for the test data
+    f1_score <- calculate_f1_score(test_predictions, test_data$target)
+    
+    # Store the results in the results table
+    results <- rbind(results, data.frame(Model = paste("Cluster", i),
+                                         Accuracy = accuracy,
+                                         F1_Score = f1_score))
+  }
+  
+  return(results)
+}
+
+# Assuming you have 'train_data_list' and 'test_data_list' as lists of data frames
+# Example usage:
+results <- perform_svm_cv_and_evaluate(train_data_luad, test_data_luad)
+# Print the results table
+print(results)
+
+results <- as.data.frame(results)
+results
+
+accuracy_results <- results[order(results$Accuracy, decreasing = TRUE), ] %>% filter(Accuracy >= 0.80)
+accuracy_results
+
+tcga.luad[1]
+
+
+
+model <- as.list(c(8,4))
+for (i in model){
+    print(clusters[[i]])}
+
+
+
+lusc <- perform_svm_cv_and_predict(train_data_lusc, test_data_lusc)
+
+lusc <- perform_svm_cv_and_evaluate(train_data_lusc, test_data_lusc)
+
+lusc <- as.data.frame(lusc)
+lusc
+
+
+
+accuracy_results <- lusc[order(lusc$Accuracy, decreasing = TRUE), ] %>% filter(Accuracy >= 0.90)
+accuracy_results
+
+accuracy_results$Accuracy
+
+write.csv(accuracy_results, "lusc_accuracy.csv", row.names = FALSE)
+
+
+install.packages("rpart")
+install.packages("pROC")
+install.packages("caret")
+library(rpart)
+library(pROC)
+library(caret)
+
+# Function to perform Decision Tree model training with K-fold cross-validation and evaluation
+perform_decision_tree_cv_and_evaluate <- function(train_data_list, test_data_list, k = 5) {
+  
+  # Initialize an empty data frame to store the results (model, accuracy, F1 score, AUC)
+  results <- data.frame(Model = character(),
+                        Accuracy = numeric(),
+                        F1_Score = numeric(),
+                        AUC = numeric(),
+                        stringsAsFactors = FALSE)
+  
+  # Loop through each pair of train and test dataframes in the list
+  for (i in seq_along(train_data_list)) {
+    
+    # Get the current training and test data
+    train_data <- train_data_list[[i]]
+    test_data <- test_data_list[[i]]
+    
+    # Ensure that 'target' is the name of the response variable in your dataframe
+    # If the target variable has a different name, replace 'target' with the correct column name
+    train_data$target <- factor(train_data$target)  # Convert target to factor for classification
+    test_data$target <- factor(test_data$target)  # Convert target to factor for classification
+    
+    # Define training control for K-fold cross-validation
+    train_control <- trainControl(method = "cv", number = k, 
+                                  summaryFunction = twoClassSummary, 
+                                  classProbs = TRUE, 
+                                  savePredictions = "final")
+    
+    # Train the decision tree model using rpart
+    decision_tree_model <- train(target ~ ., data = train_data, method = "rpart", 
+                                 trControl = train_control, 
+                                 metric = "ROC")
+    
+    # Print the summary of results (accuracy, ROC, etc.)
+    print(paste("Results for Model", i))
+    print(decision_tree_model$results)
+    
+    # Get predictions on the test data
+    test_predictions <- predict(decision_tree_model, newdata = test_data)
+    test_predicted_probs <- predict(decision_tree_model, newdata = test_data, type = "prob")[, 2]  # Probabilities for the positive class
+    
+    # Calculate accuracy
+    accuracy <- mean(test_predictions == test_data$target)
+    
+    # Calculate F1 score
+    f1_score <- calculate_f1_score(test_predictions, test_data$target)
+    
+    # Calculate AUC (Area Under the Curve)
+    roc_curve <- roc(test_data$target, test_predicted_probs)
+    auc_value <- auc(roc_curve)
+    
+    # Append the results to the results table
+    results <- rbind(results, data.frame(Model = paste("Model", i),
+                                         Accuracy = accuracy,
+                                         F1_Score = f1_score,
+                                         AUC = auc_value))
+    
+    # Plot ROC curve for the current model
+    plot(roc_curve, main = paste("ROC Curve for Model", i))
+  }
+  
+  # Return the results table with accuracy, F1 score, and AUC
+  return(results)
+}
+
+
+# Function to calculate F1 score
+calculate_f1_score <- function(predictions, actual) {
+  cm <- confusionMatrix(predictions, actual)
+  precision <- cm$byClass["Precision"]
+  recall <- cm$byClass["Recall"]
+  f1 <- 2 * (precision * recall) / (precision + recall)
+  return(f1)
+}
+
+# Function to perform Decision Tree model training with K-fold cross-validation and evaluation
+perform_decision_tree_cv_and_evaluate <- function(train_data_list, test_data_list, k = 5) {
+  
+  # Initialize an empty data frame to store the results (model, accuracy, F1 score, AUC)
+  results <- data.frame(Model = character(),
+                        Accuracy = numeric(),
+                        F1_Score = numeric(),
+                        AUC = numeric(),
+                        stringsAsFactors = FALSE)
+  
+  # Loop through each pair of train and test dataframes in the list
+  for (i in seq_along(train_data_list)) {
+    
+    # Get the current training and test data
+    train_data <- train_data_list[[i]]
+    test_data <- test_data_list[[i]]
+    
+    # Ensure that 'target' is the name of the response variable in your dataframe
+    train_data$target <- factor(train_data$target)  # Convert target to factor for classification
+    test_data$target <- factor(test_data$target)  # Convert target to factor for classification
+    
+    # Define training control for K-fold cross-validation
+    train_control <- trainControl(method = "cv", number = k, 
+                                  summaryFunction = twoClassSummary, 
+                                  classProbs = TRUE, 
+                                  savePredictions = "final")
+    
+    # Train the decision tree model using rpart
+    decision_tree_model <- train(target ~ ., data = train_data, method = "rpart", 
+                                 trControl = train_control, 
+                                 metric = "ROC")
+    
+    # Print the summary of results (accuracy, ROC, etc.)
+    print(paste("Results for Model", i))
+    print(decision_tree_model$results)
+    
+    # Get predictions on the test data
+    test_predictions <- predict(decision_tree_model, newdata = test_data)
+    test_predicted_probs <- predict(decision_tree_model, newdata = test_data, type = "prob")[, 2]  # Probabilities for the positive class
+    
+    # Calculate accuracy
+    accuracy <- mean(test_predictions == test_data$target)
+    
+    # Calculate F1 score
+    f1_score <- calculate_f1_score(test_predictions, test_data$target)
+    
+    # Calculate AUC (Area Under the Curve)
+    roc_curve <- roc(test_data$target, test_predicted_probs)
+    auc_value <- auc(roc_curve)
+    
+    # Append the results to the results table
+    results <- rbind(results, data.frame(Model = paste("Model", i),
+                                         Accuracy = accuracy,
+                                         F1_Score = f1_score,
+                                         AUC = auc_value))
+    
+    # Plot ROC curve for the current model
+    plot(roc_curve, main = paste("ROC Curve for Model", i))
+  }
+  
+  # Return the results table with accuracy, F1 score, and AUC
+  return(results)
+}
+
+
+results_table_LUAD <- perform_decision_tree_cv_and_evaluate(train_data_luad, test_data_luad)
+
+print(results_table_LUAD)
+
+luad <- as.data.frame(results_table_LUAD)
+
+accuracy_results <- luad[order(luad$Accuracy, decreasing = TRUE), ] %>% filter(Accuracy >= 0.90)
+accuracy_results
+
+clusters <- as.list(names(tcga.luad))
+model <- as.list(c(8,4,24,13,14))
+for (i in model){
+    print(clusters[[i]])}
+
+tcga.luad[14]
+
+results_table_LUSC <- perform_decision_tree_cv_and_evaluate(train_data_lusc, test_data_lusc)
+
+lusc <- as.data.frame(results_table_LUSC)
+
+accuracy_results <- lusc[order(lusc$Accuracy, decreasing = TRUE), ] %>% filter(Accuracy >= 0.92)
+accuracy_results
+
+tcga.lusc[1]
 
 install.packages("e1071")
 library(e1071)
@@ -762,3 +1366,114 @@ for (i in seq_along(test_data_luad)) {
 
 # You can print or analyze the test results
 print(pca_test_results)
+
+# Load the necessary libraries
+library(caret)
+library(rpart)  # For Decision Tree
+
+# Function to prepare the data (transposing gene expression data and adding target)
+prepare_logistic_regression_data <- function(gene_expression_data, target) {
+  # Transpose the gene expression data to have samples as rows
+  logistic_data <- t(gene_expression_data)
+  logistic_data <- data.frame(logistic_data)
+  
+  # Add the target variable as a column
+  logistic_data$target <- target
+  
+  return(logistic_data)
+}
+
+# Initialize lists to store the prepared data for decision tree (same as before)
+train_data_luad <- list()
+test_data_luad <- list()
+
+# Prepare the data for each cluster in tcga.luad
+for (i in seq_along(train_tcga_luad)) {
+  train_data_luad[[i]] <- prepare_logistic_regression_data(train_tcga_luad[[i]], train_luad_targets[[i]])
+  test_data_luad[[i]] <- prepare_logistic_regression_data(test_tcga_luad[[i]], test_luad_targets[[i]])
+}
+
+train_data_lusc <- list()
+test_data_lusc <- list()
+
+# Prepare the data for each cluster in tcga.lusc
+for (i in seq_along(train_tcga_lusc)) {
+  train_data_lusc[[i]] <- prepare_logistic_regression_data(train_tcga_lusc[[i]], train_lusc_targets[[i]])
+  test_data_lusc[[i]] <- prepare_logistic_regression_data(test_tcga_lusc[[i]], test_lusc_targets[[i]])
+}
+
+# Convert the target variable to binary for classification (Tumor = 1, Normal = 0)
+for (i in seq_along(train_data_luad)) {
+  train_data_luad[[i]]$target <- ifelse(train_data_luad[[i]]$target == "Tumor", 1, 0)
+}
+
+for (i in seq_along(train_data_lusc)) {
+  train_data_lusc[[i]]$target <- ifelse(train_data_lusc[[i]]$target == "Tumor", 1, 0)
+}
+
+for (i in seq_along(test_data_luad)) {
+  test_data_luad[[i]]$target <- ifelse(test_data_luad[[i]]$target == "Tumor", 1, 0)
+}
+
+for (i in seq_along(test_data_lusc)) {
+  test_data_lusc[[i]]$target <- ifelse(test_data_lusc[[i]]$target == "Tumor", 1, 0)
+}
+
+# Define the training control for k-fold cross-validation
+train_control <- trainControl(
+  method = "cv",  # k-fold cross-validation
+  number = 10,     # Number of folds (change this if needed)
+  savePredictions = "all",  # Save all predictions to calculate performance metrics
+  classProbs = TRUE,  # For classification, we need probabilities for accuracy and AUC
+  summaryFunction = twoClassSummary  # Summary function to get classification metrics
+)
+
+# Train the Decision Tree models using k-fold cross-validation
+decision_tree_models_luad <- list()
+for (i in seq_along(train_data_luad)) {
+  decision_tree_models_luad[[i]] <- train(
+    target ~ .,  # Formula for decision tree
+    data = train_data_luad[[i]],  # Training data
+    method = "rpart",  # Decision tree method
+    trControl = train_control,  # k-fold cross-validation
+    metric = "Accuracy"  # Metric to optimize for
+  )
+}
+
+# Check accuracy for each fold
+accuracy_luad <- sapply(decision_tree_models_luad, function(model) {
+  mean(model$resample$Accuracy, na.rm = TRUE)  # Mean accuracy from cross-validation
+})
+
+# Print accuracy for each model
+print(accuracy_luad)
+
+# Repeat the same process for tcga.lusc
+decision_tree_models_lusc <- list()
+for (i in seq_along(train_data_lusc)) {
+  decision_tree_models_lusc[[i]] <- train(
+    target ~ .,  # Formula for decision tree
+    data = train_data_lusc[[i]],  # Training data
+    method = "rpart",  # Decision tree method
+    trControl = train_control,  # k-fold cross-validation
+    metric = "Accuracy"  # Metric to optimize for
+  )
+}
+
+# Check accuracy for each fold for tcga.lusc
+accuracy_lusc <- sapply(decision_tree_models_lusc, function(model) {
+  mean(model$resample$Accuracy, na.rm = TRUE)  # Mean accuracy from cross-validation
+})
+
+# Print accuracy for each model
+print(accuracy_lusc)
+
+
+
+
+
+
+
+
+cv_model <- train(target ~ ., data = train_data, method = "glm", family = "binomial", 
+                  trControl = trainControl(method = "cv", number = 10))
