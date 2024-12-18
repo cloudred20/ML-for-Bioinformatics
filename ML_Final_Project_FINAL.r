@@ -211,7 +211,6 @@ for (i in names(condition)) {  # Loop over names of 'condition' instead of 'dat.
   write.csv(condition[[i]], file = paste0("Final_project_data/condition_", i, ".csv"), row.names = FALSE)
 }
 
-
 # Download the human genome GFF3 file from miRBase containing miRNA annotations
 # Use curl to download the file
 system("curl -o Final_project_data/hsa.gff3 https://www.mirbase.org/download/hsa.gff3")
@@ -303,6 +302,42 @@ summary(res_lusc)
 
 plotMA(res_lusc)
 
+# Volcano Plot
+for (i in 1:length(dds)) {
+  # Extract results for the current dataset
+  res <- results(dds[[i]])
+  
+  # Convert to data frame
+  res_df <- as.data.frame(res)
+  
+  # Add color classification based on log2FoldChange thresholds
+  res_df$color <- "gray"  # Default color
+  res_df$color[res_df$log2FoldChange >= 0.6] <- "red"
+  res_df$color[res_df$log2FoldChange <= -0.6] <- "darkgreen"
+  
+  # Count the number of red and green points
+  num_red <- sum(res_df$color == "red", na.rm = TRUE)
+  num_green <- sum(res_df$color == "darkgreen", na.rm = TRUE)
+  
+  # Display the counts
+  cat("Number of red points (log2FC >= 0.6):", num_red, "\n")
+  cat("Number of green points (log2FC <= -0.6):", num_green, "\n\n")
+  
+  # Create the volcano plot
+  p <- ggplot(res_df, aes(x = log2FoldChange, y = -log10(padj))) +
+    geom_point(aes(color = color), size = 2) +
+    scale_color_identity() +  # Use the exact color values from the 'color' column
+    xlab("log2 Fold Change") +
+    ylab("-log10 Adjusted p-value (FDR)") +
+    theme_classic() +
+    theme(
+      axis.text = element_text(color = "black", size = 15, face = "bold"),
+      axis.title = element_text(color = "black", size = 15, face = "bold")
+    )
+  
+  print(p)
+}
+
 #Convert into df and order by lowest p adjusted value
 LUSC_df <- as.data.frame(res_lusc)
 LUSC_df <- LUSC_df[order(LUSC_df$padj),]
@@ -310,7 +345,7 @@ LUSC_df
 
 #filter based on p adjusted value
 filter_LUSC <- LUSC_df %>% filter(LUSC_df$padj <0.05)
-filter_LUSC <- filter_LUSC %>% filter(abs(filter_LUSC$log2FoldChange)>1)
+filter_LUSC <- filter_LUSC %>% filter(abs(filter_LUSC$log2FoldChange)> 0.6)
 filter_LUSC
 
 ## 1. Feature Selection for miRNA Clusters in LUAD and LUSC Datasets----
